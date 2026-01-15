@@ -1,0 +1,151 @@
+-- Combined VCC Actuals and IEX Schedule Data
+-- Include all original VCC Actuals columns + AGNT_PROFL_NM as Associate_Name
+-- Only include rows where VCC_ID is not null
+
+WITH VCC_Actuals AS (
+    SELECT 
+        SRC_APPLN_NM,
+        AGNT_ACCT_ID,
+        AGNT_PROFL_NM AS Associate_Name,   -- Added Associate Name
+        STATUS_NM,
+        STATUS_TYPE_NM,
+        STATUS_DUR_SEC,
+        STATUS_START_DT,
+        SITE_CD,
+        SITE_NM,
+        GEO_REGION_CD,
+        STATUS_START_TS,
+        STATUS_END_TS,
+        
+        -- Convert original timestamps to CST without 'T'
+        FORMAT_DATETIME('%Y-%m-%d %H:%M:%S', DATETIME(TIMESTAMP(STATUS_START_TS), "US/Central")) AS Original_Status_Start_TS,
+        FORMAT_DATETIME('%Y-%m-%d %H:%M:%S', DATETIME(TIMESTAMP(STATUS_END_TS), "US/Central")) AS Original_Status_End_TS,
+        
+        -- Aggregate status timestamps to CST
+        FORMAT_DATETIME('%Y-%m-%d %H:%M:%S', MIN(DATETIME(TIMESTAMP(STATUS_START_TS), "US/Central"))) AS Status_Start_CST,
+        FORMAT_DATETIME('%Y-%m-%d %H:%M:%S', MAX(DATETIME(TIMESTAMP(STATUS_END_TS), "US/Central"))) AS Status_End_CST,
+        
+        -- Aggregate status timestamps to IST
+        FORMAT_DATETIME('%Y-%m-%d %H:%M:%S', MIN(DATETIME(TIMESTAMP(STATUS_START_TS), "Asia/Kolkata"))) AS Status_Start_IST,
+        FORMAT_DATETIME('%Y-%m-%d %H:%M:%S', MAX(DATETIME(TIMESTAMP(STATUS_END_TS), "Asia/Kolkata"))) AS Status_End_IST,
+        
+        -- Create Lookup Reference
+        CONCAT(FORMAT_DATETIME('%m/%d/%Y', MIN(DATETIME(TIMESTAMP(STATUS_START_TS), "US/Central"))), "-", AGNT_ACCT_ID) AS Lookup_Reference
+
+    FROM 
+        `wmt-edw-prod.WW_CUSTOMER_DL_VM.CS_AGNT_STATUS`
+    
+    WHERE 
+        STATUS_START_DT >= DATE('2025-12-01')
+        AND SITE_NM IN (
+            'Account_Review_WMT_IND_MAA',
+            'Account_Review_NST_WMT_IND_MAA',
+            'Account_Review_SPV_WMT_IND_MAA'
+        )
+    
+    GROUP BY 
+        SRC_APPLN_NM,
+        AGNT_ACCT_ID,
+        AGNT_PROFL_NM,          -- Added for grouping
+        STATUS_NM,
+        STATUS_TYPE_NM,
+        STATUS_DUR_SEC,
+        STATUS_START_DT,
+        SITE_CD,
+        SITE_NM,
+        GEO_REGION_CD,
+        STATUS_START_TS,
+        STATUS_END_TS
+),
+
+IEX_Schedule AS (
+    SELECT 
+        SRC_APPLN_NM AS Source_Application_Name,
+        AGNT_ACCT_ID AS VCC_ID,
+        SITE_NM AS Team_Name,
+        GEO_REGION_CD AS Geo_Location,
+        
+        -- Original Schedule timestamps in CST
+        FORMAT_DATETIME('%Y-%m-%d %H:%M:%S', DATETIME(TIMESTAMP(SCHED_ACTV_START_DT_UTC), "US/Central")) AS Original_Activity_Start_TS,
+        FORMAT_DATETIME('%Y-%m-%d %H:%M:%S', DATETIME(TIMESTAMP(SCHED_ACTV_END_DT_UTC), "US/Central")) AS Original_Activity_End_TS,
+        
+        -- Aggregate schedule timestamps to CST
+        FORMAT_DATETIME('%Y-%m-%d %H:%M:%S', MIN(DATETIME(TIMESTAMP(SCHED_ACTV_START_TS_UTC), "US/Central"))) AS Schedule_Start_CST,
+        FORMAT_DATETIME('%Y-%m-%d %H:%M:%S', MAX(DATETIME(TIMESTAMP(SCHED_ACTV_END_TS_UTC), "US/Central"))) AS Schedule_End_CST,
+        
+        -- Aggregate schedule timestamps to IST
+        FORMAT_DATETIME('%Y-%m-%d %H:%M:%S', MIN(DATETIME(TIMESTAMP(SCHED_ACTV_START_TS_UTC), "Asia/Kolkata"))) AS Schedule_Start_IST,
+        FORMAT_DATETIME('%Y-%m-%d %H:%M:%S', MAX(DATETIME(TIMESTAMP(SCHED_ACTV_END_TS_UTC), "Asia/Kolkata"))) AS Schedule_End_IST,
+        
+        -- Lookup Reference for joining
+        CONCAT(FORMAT_DATETIME('%m/%d/%Y', MIN(DATETIME(TIMESTAMP(SCHED_ACTV_START_DT_UTC), "US/Central"))), "-", AGNT_ACCT_ID) AS Lookup_Reference
+
+    FROM 
+        `wmt-edw-prod.WW_CUSTOMER_DL_SECURE.CS_AGNT_SCHED`
+    
+    WHERE 
+        SCHED_ACTV_START_DT_UTC BETWEEN '2025-12-01' AND CURRENT_DATE()
+        AND SITE_NM IN (
+            'Account_Review_WMT_IND_MAA',
+            'Account_Review_NST_WMT_IND_MAA',
+            'Account_Review_SPV_WMT_IND_MAA'
+        )
+    
+    GROUP BY 
+        SRC_APPLN_NM,
+        AGNT_ACCT_ID,
+        SITE_NM,
+        GEO_REGION_CD,
+        SCHED_ACTV_START_DT_UTC,
+        SCHED_ACTV_END_DT_UTC,
+        SCHED_ACTV_DUR_MIN_QTY
+)
+
+-- Final combined dataset including Associate_Name
+SELECT 
+    -- Original VCC Actuals columns
+    VCC.SRC_APPLN_NM,
+    VCC.AGNT_ACCT_ID,
+    VCC.Associate_Name,  -- Added
+    VCC.STATUS_NM,
+    VCC.STATUS_TYPE_NM,
+    VCC.STATUS_DUR_SEC,
+    VCC.STATUS_START_DT,
+    VCC.SITE_CD,
+    VCC.SITE_NM,
+    VCC.GEO_REGION_CD,
+    VCC.STATUS_START_TS,
+    VCC.STATUS_END_TS,
+    
+    -- VCC Actuals converted timestamps
+    VCC.Original_Status_Start_TS,
+    VCC.Original_Status_End_TS,
+    VCC.Status_Start_CST,
+    VCC.Status_End_CST,
+    VCC.Status_Start_IST,
+    VCC.Status_End_IST,
+    
+    -- IEX Schedule timestamps
+    IEX.Original_Activity_Start_TS,
+    IEX.Original_Activity_End_TS,
+    IEX.Schedule_Start_CST,
+    IEX.Schedule_End_CST,
+    IEX.Schedule_Start_IST,
+    IEX.Schedule_End_IST
+
+FROM 
+    VCC_Actuals AS VCC
+INNER JOIN 
+    IEX_Schedule AS IEX
+ON 
+    VCC.Lookup_Reference = IEX.Lookup_Reference
+
+WHERE 
+    VCC.AGNT_ACCT_ID IS NOT NULL  -- Exclude rows with null VCC_ID
+
+ORDER BY 
+    VCC.AGNT_ACCT_ID,
+    IEX.Original_Activity_Start_TS;
+
+
+ 
