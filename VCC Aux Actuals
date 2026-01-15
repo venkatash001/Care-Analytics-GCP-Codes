@@ -1,0 +1,48 @@
+SELECT 
+    SRC_APPLN_NM AS Source_Application_Name,
+    AGNT_ACCT_ID AS VCC_ID,
+    STATUS_NM AS Status_Name,
+    STATUS_TYPE_NM AS Status_Type,
+    STATUS_DUR_SEC AS Status_Duration,
+    STATUS_START_DT AS Status_Start_Date,
+    SITE_CD AS Team_ID,
+    SITE_NM AS Team_Name,
+    GEO_REGION_CD AS Geo_Location,
+    
+    -- Convert to CST and format without T
+    FORMAT_DATETIME('%Y-%m-%d %H:%M:%S', DATETIME(TIMESTAMP(STATUS_START_TS), "US/Central")) AS Status_StartTime_Original_CST,
+    FORMAT_DATETIME('%Y-%m-%d %H:%M:%S', DATETIME(TIMESTAMP(STATUS_END_TS), "US/Central")) AS Status_EndTime_Original_CST,
+    
+    FORMAT_DATETIME('%Y-%m-%d %H:%M:%S', MIN(DATETIME(TIMESTAMP(STATUS_START_TS), "US/Central"))) AS Status_StartTime_CST,
+    FORMAT_DATETIME('%Y-%m-%d %H:%M:%S', MAX(DATETIME(TIMESTAMP(STATUS_END_TS), "US/Central"))) AS Status_EndTime_CST,
+    
+    -- Convert to IST and format without T
+    FORMAT_DATETIME('%Y-%m-%d %H:%M:%S', MIN(DATETIME(TIMESTAMP(STATUS_START_TS), "Asia/Kolkata"))) AS Status_StartTime_IST,
+    FORMAT_DATETIME('%Y-%m-%d %H:%M:%S', MAX(DATETIME(TIMESTAMP(STATUS_END_TS), "Asia/Kolkata"))) AS Status_EndTime_IST,
+    
+    CONCAT(FORMAT_DATETIME('%m/%d/%Y', MIN(DATETIME(TIMESTAMP(STATUS_START_TS), "US/Central"))), "-", AGNT_ACCT_ID) AS Lookup_Reference
+
+FROM 
+    `wmt-edw-prod.WW_CUSTOMER_DL_VM.CS_AGNT_STATUS`
+
+WHERE 
+    STATUS_START_DT >= DATE('2025-12-01')
+    AND SITE_NM IN (
+        'Account_Review_WMT_IND_MAA',
+        'Account_Review_NST_WMT_IND_MAA',
+        'Account_Review_SPV_WMT_IND_MAA'
+    )
+
+GROUP BY 
+    SRC_APPLN_NM,
+    AGNT_ACCT_ID,
+    STATUS_NM,
+    STATUS_TYPE_NM,
+    STATUS_DUR_SEC,
+    STATUS_START_DT,
+    SITE_CD,
+    SITE_NM,
+    GEO_REGION_CD,
+    STATUS_START_TS,
+    STATUS_END_TS
+ 
